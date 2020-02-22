@@ -1,0 +1,122 @@
+---
+title: "Neural Network tests with neuralnet package"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+ptStart <- proc.time()
+library(ISLR)
+library(e1071)
+library(neuralnet)
+library(ggplot2)
+library(scatterplot3d)
+library(class)
+library(GGally)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Model banknote authentication data
+
+```{r banknotedatann}
+# Get information from dataset
+banknote <- read.table("data\\data_banknote_authentication.txt", sep = ",")
+# Naming the columns
+colnames(banknote) <- c("variance","skewness" , "curtosis", "entropy", "classoutcome")
+
+# Define dataframe to store the errors
+dferror <- NULL
+
+# Define the number of simulations
+ntries <- 1:30
+
+# Loop to run simulations
+for (itry in ntries) {
+  
+  # Resample validation training and test dataset - Bootstrap
+  idxboot <- sample(nrow(banknote), nrow(banknote), replace = TRUE)
+  btrain  <- banknote[unique(idxboot),]
+  btrain.svm <- btrain
+  btrain.svm$classoutcome <- as.factor(btrain.svm$classoutcome)
+  btest   <- banknote[-idxboot,]
+  
+  ############# NN Model ##############
+  
+  # Loop to run 1..6 nodes
+  for (inodes in 1:6) {
+    
+    #print(paste("Try :",itry, " Nodes :", inodes))
+    
+    # Fit Neural Network model.
+    nn.model <- neuralnet(classoutcome ~ variance + skewness, data = btrain[,1:5], hidden = inodes, linear.output = FALSE, threshold = 0.04)
+  
+    # Predict and compute the error test. 
+    nn.predi <- compute(nn.model, btest[,1:2])
+    nn.resul <- ifelse(nn.predi$net.result >= 0.5, 1, 0)
+    nn.tbl   <- table(predict=nn.resul, true=btest[,5] )
+    nn.err   <- 1-(sum(diag(nn.tbl)/sum(nn.tbl)))
+  
+    # Store the error test
+    dferror <- rbind(dferror, data.frame(try=itry, method=paste0("NN-",inodes), error=nn.err))
+  }
+  
+  ############# KNN Model ##############
+  
+  # Loop to run 5..10 Ks
+  for (ik in 5:10)  {
+    
+    #print(paste("Try :",itry, " K :", ik))
+    
+    # Fit the model and predict
+    pred.out  <- knn(btrain[,1:2], btest[,1:2], btrain[,5], k = ik)
+    
+    # Calculate error.
+    tblerr <- table(predict=pred.out, truth=btest[,5])
+    err.true <- 1-(sum(diag(tblerr))/sum(tblerr))
+
+    # Store the error
+    dferror <- rbind(dferror, data.frame(try=itry, method=paste0("KNN-",ik), error=err.true))
+      
+  }
+  
+  
+  ############# SVM Model ##############
+  #print(paste("Try :",itry, " SVM"))
+  
+  # Fit the model
+  svm.fit <- svm(classoutcome ~ variance + skewness, btrain.svm, kernel = "radial", cost=1, gamma=1)
+  
+  # Preidct and compute the test error.
+  pred.out <- predict(svm.fit, btest[,1:2])
+  tblerr <- table(predict=pred.out, truth=btest[,5])
+  err.true <- 1-(sum(diag(tblerr))/sum(tblerr))
+
+  # Store the error 
+  dferror <- rbind(dferror, data.frame(try=itry, method="SVM", error=err.true))
+
+}
+
+  
+ggplot(dferror, aes(x=as.factor(method), y=error, color = as.factor(method))) + geom_boxplot()
+
+```
+
+**For this sample I used only the two most correlated fields of the dataset (variance and skewness). I also used the best knn and svm models.**
+
+**With the exception of the neural network with only 1 node, the other methods had a very similar performance.**
+**The neural network may perform similarly to other methods, depending on the type of dataset and the number of observations.**
+
+# Session info {-}
+
+```{r}
+sessionInfo()
+```
+
+The time it took to knit this file from beginning to end is about (seconds):
+
+```{r}
+proc.time() - ptStart
+```
